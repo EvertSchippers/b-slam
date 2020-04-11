@@ -22,7 +22,7 @@ function init() {
     geometry.scale( 0.5, 0.5, 0.5 );
     var material = new THREE.MeshBasicMaterial( { map: texture } );
 
-    var count = 128;
+    var count = 52;
     var radius = 32;
 
     for ( var i = 1, l = count; i <= l; i ++ ) {
