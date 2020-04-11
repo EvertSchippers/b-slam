@@ -130,7 +130,6 @@ var DeviceOrientationRaw = function (  ) {
 
 			var screenOrientation = scope.screenOrientation ? MathUtils.degToRad( scope.screenOrientation ) : 0; // O
 
-            earthDiv.textContent = pitchRadians + "; " + rollRadians + "; "+ headingRadians + " - " + screenOrientation;
 
             var roll = new Quaternion();
             roll.setFromAxisAngle(new Vector3(0,1,0), rollRadians);
@@ -147,9 +146,15 @@ var DeviceOrientationRaw = function (  ) {
             // Physically the camera also doesn't change orientation, however, the incoming
             // video stream rotates and even changes aspect ratio.
             // Same for the screen itself.
-            var camera_from_phone = new Quaternion();
-            camera_from_phone.setFromAxisAngle(new Vector3(0,0,1), screenOrientation);
+            var camera_from_tablet = new Quaternion();
+            camera_from_tablet.setFromAxisAngle(new Vector3(0,0,1), screenOrientation);
+            var tablet_from_camera = camera_from_tablet.inverse();
 
+            var world_from_camera = world_from_tablet.multiply(tablet_from_camera);
+
+            var forward = new Vector3(0,1,0).applyQuaternion(world_from_camera);
+
+            earthDiv.textContent = forward.x + ", " + forward.y + ", "+ forward.z;
 
             
 
