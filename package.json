@@ -1,8 +1,8 @@
 {
   "name": "b-slam",
   "version": "1.0.0",
-  "description": "",
   "main": "index.js",
+  "private": true,
   "dependencies": {
     "three": "^0.115.0"
   },
@@ -22,5 +22,7 @@
   "bugs": {
     "url": "https://github.com/EvertSchippers/b-slam/issues"
   },
-  "homepage": "https://github.com/EvertSchippers/b-slam#readme"
+  "homepage": "https://github.com/EvertSchippers/b-slam#readme",
+  "keywords": [],
+  "description": ""
 }
