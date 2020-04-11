@@ -5,82 +5,44 @@ import { DeviceOrientationControls } from 'three/examples/jsm/controls/DeviceOri
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
 var camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
-var device = new THREE.Group();
-var world = new THREE.Group();
+var tablet = new THREE.Group();
 
-var scene, renderer,labelRenderer, video, rawOrientation, earthDiv;
-
-// class DeviceOrientationRaw
-// {
-//     // absolute :number;
-//     alpha    :any;
-//     beta     :any;
-//     gamma    :any;
-
-//     deviceOrientationEvent    :any;
-
-//     constructor() {
-//         this.deviceOrientationEvent = window.DeviceOrientationEvent;
-//     }
-
-//     connect() {
-        
-//         console.info("CONNECTING...");
-
-//         if (  this.deviceOrientationEvent !== undefined && typeof  this.deviceOrientationEvent.requestPermission === 'function' ) {
-
-//             this.deviceOrientationEvent.requestPermission().then( function ( response ) {
-
-// 				if ( response == 'granted' ) {
-
-// 					// window.addEventListener( 'orientationchange', onScreenOrientationChangeEvent, false );
-// 					window.addEventListener( 'deviceorientation', onDeviceOrientationChangeEvent, false );
-// console.info("ACCESS GRANTED...");
-        
-// 				}
-
-// 			} ).catch( function ( error ) {
-
-// 				console.error( 'THREE.DeviceOrientationControls: Unable to use DeviceOrientation API:', error );
-
-// 			} );
-
-// 		} else {
-//             console.info("NO PERMISSION NEEDED...");
-
-// 			// window.addEventListener( 'orientationchange', onScreenOrientationChangeEvent, false );
-// 			window.addEventListener( 'deviceorientation', onDeviceOrientationChangeEvent, false );
-
-// 		}
-//     }
-
-// }
-
+var scene, renderer, labelRenderer, video, rawOrientation, earthDiv, videoPlane;
 
 var DeviceOrientationRaw = function (  ) {
 
 	var scope = this;
 
-	// this.object = object;
-	// this.object.rotation.reorder( 'YXZ' );
-
 	this.enabled = true;
 
 	this.deviceOrientation = {};
 	this.screenOrientation = 0;
-
 	this.alphaOffset = 0; // radians
 
 	var onDeviceOrientationChangeEvent = function ( event ) {
 
-		scope.deviceOrientation = event;
+        scope.deviceOrientation = event;
 
 	};
 
 	var onScreenOrientationChangeEvent = function () {
 
-		scope.screenOrientation = window.orientation || 0;
+        scope.screenOrientation = window.orientation || 0;
+        
+        // default, 0, is portrait mode
+        var heightToWidth = 9.0 / 16.0;
 
+        // else, landscape mode
+        if (Math.abs(scope.screenOrientation) > 0)
+        {
+            heightToWidth = 16.0 / 9.0;
+        }
+
+        var distance = (camera.far - 0.01);
+        var height = Math.tan(0.5 * camera.fov * Math.PI / 180) * distance * 2;
+        var geometry = new THREE.PlaneBufferGeometry( height * heightToWidth, height);
+
+        videoPlane.geometry = geometry;
 	};
 
 	// The angles alpha, beta and gamma form a set of intrinsic Tait-Bryan angles of type Z-X'-Y''
@@ -113,11 +75,14 @@ var DeviceOrientationRaw = function (  ) {
 
 		onScreenOrientationChangeEvent(); // run once on load
 
+        var toFoolTypeScript; 
+        var deviceOrientationEvent = (window.DeviceOrientationEvent !== undefined) ? window.DeviceOrientationEvent : toFoolTypeScript;
+
 		// iOS 13+
 
-		if ( window.DeviceOrientationEvent !== undefined && typeof window.DeviceOrientationEvent.requestPermission === 'function' ) {
+		if ( window.DeviceOrientationEvent !== undefined && typeof deviceOrientationEvent.requestPermission === 'function' ) {
 
-			window.DeviceOrientationEvent.requestPermission().then( function ( response ) {
+			deviceOrientationEvent.requestPermission().then( function ( response ) {
 
 				if ( response == 'granted' ) {
 
@@ -140,7 +105,6 @@ var DeviceOrientationRaw = function (  ) {
 		}
 
 		scope.enabled = true;
-
 	};
 
 	this.disconnect = function () {
@@ -160,16 +124,37 @@ var DeviceOrientationRaw = function (  ) {
 
 		if ( device ) {
 
-			var alpha = device.alpha ? MathUtils.degToRad( device.alpha ) + scope.alphaOffset : 0; // Z
+			var headingRadians = device.alpha ? MathUtils.degToRad( device.alpha ) + scope.alphaOffset : 0; // Z
+			var pitchRadians = device.beta ? MathUtils.degToRad( device.beta ) : 0; // X'
+			var rollRadians = device.gamma ? MathUtils.degToRad( device.gamma ) : 0; // Y''
 
-			var beta = device.beta ? MathUtils.degToRad( device.beta ) : 0; // X'
+			var screenOrientation = scope.screenOrientation ? MathUtils.degToRad( scope.screenOrientation ) : 0; // O
 
-			var gamma = device.gamma ? MathUtils.degToRad( device.gamma ) : 0; // Y''
+            earthDiv.textContent = pitchRadians + "; " + rollRadians + "; "+ headingRadians + " - " + screenOrientation;
 
-			var orient = scope.screenOrientation ? MathUtils.degToRad( scope.screenOrientation ) : 0; // O
+            var roll = new Quaternion();
+            roll.setFromAxisAngle(new Vector3(0,1,0), rollRadians);
 
-            earthDiv.textContent = alpha + "," + beta + ","+ gamma;
+            var pitch = new Quaternion();
+            pitch.setFromAxisAngle(new Vector3(1,0,0), pitchRadians);
 
+            var heading = new Quaternion();
+            heading.setFromAxisAngle(new Vector3(0,0,1), headingRadians);
+
+            // This rotation is not affected by the orientation of the device:
+            var world_from_tablet = heading.multiply(pitch).multiply(roll);
+
+            // Physically the camera also doesn't change orientation, however, the incoming
+            // video stream rotates and even changes aspect ratio.
+            // Same for the screen itself.
+            var camera_from_phone = new Quaternion();
+            camera_from_phone.setFromAxisAngle(new Vector3(0,0,1), screenOrientation);
+
+
+            
+
+
+            
 			// setObjectQuaternion( scope.object.quaternion, alpha, beta, gamma, orient );
 
 		}
@@ -189,15 +174,6 @@ var DeviceOrientationRaw = function (  ) {
 
 
 
-// function onDeviceOrientationChangeEvent(event) {
-//     // this.absolute = event.absolute;
-//     rawOrientation.alpha    = 1.0 ;  //event.alpha ? event.alpha : 0.0;
-//     rawOrientation.beta     = event.beta ? event.beta : 0.0;
-//     rawOrientation.gamma    = event.gamma ? event.gamma : 0.0;      
-//   }
-
-
-
 
 
 init();
@@ -211,13 +187,15 @@ function setupDevice()
     var texture = new THREE.VideoTexture( video );
     var distance = (camera.far - 0.01) ;
     var height = Math.tan(0.5 * camera.fov * Math.PI / 180) * distance * 2;
+
     var geometry = new THREE.PlaneBufferGeometry( height * 16.0 / 9.0, height);
     var material = new THREE.MeshBasicMaterial( { map: texture } );
 
     var mesh = new THREE.Mesh( geometry, material );
     mesh.position.set(0, distance, 0);
     mesh.quaternion.setFromAxisAngle(new Vector3(1,0,0), 0.5 * Math.PI); 
-    
+    videoPlane = mesh;
+
     camera.up.set(0,0,1);
     camera.lookAt(0,1,0);
 
@@ -228,9 +206,9 @@ function setupDevice()
     var earthLabel = new CSS2DObject( earthDiv );
     earthLabel.position.set( 0, distance - 0.01, 0 );
 
-    device.add(earthLabel);
-    device.add(camera);
-    device.add( mesh );
+    tablet.add(earthLabel);
+    tablet.add(camera);
+    tablet.add(videoPlane);
 }
 
 function init() {
@@ -240,7 +218,7 @@ function init() {
     setupDevice();
 
 
-    scene.add(device);
+    scene.add(tablet);
 
 
     rawOrientation = new DeviceOrientationRaw();
@@ -276,7 +254,8 @@ function startVideoStream()
 {
     if ( navigator.mediaDevices && navigator.mediaDevices.getUserMedia )
     {
-        var constraints = { video: { width: 1280, height: 720, facingMode: 'user' } };
+        // if enable switch camera, rotate camera pose
+        var constraints = { video: { width: 1280, height: 720, facingMode: 'environment' } };
 
         navigator.mediaDevices.getUserMedia( constraints ).then( function ( stream ) {
 
