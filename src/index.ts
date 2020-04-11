@@ -1,57 +1,68 @@
 import * as THREE from 'three';
 
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+// import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-var camera, scene, renderer, video;
+import { Vector3 } from 'three';
+
+var camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
+var device = new THREE.Group();
+var world = new THREE.Group();
+
+var scene, renderer, video;
+
+var up = new Vector3(0,1,0);
+var forward = new Vector3(0,0,-1);
+var right = new Vector3(1,0,0);
+
 
 init();
 animate();
 
-function init() {
 
-    camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
-    camera.position.z = 0.01;
-
-    scene = new THREE.Scene();
-
+function addVideoBackground(group: THREE.Group)
+{
     video = document.getElementById( 'video' );
 
     var texture = new THREE.VideoTexture( video );
-
-    var geometry = new THREE.PlaneBufferGeometry( 16, 9 );
-    geometry.scale( 0.5, 0.5, 0.5 );
+    var distance = (camera.far - 0.01) ;
+    var height = Math.tan(0.5 * camera.fov * Math.PI / 180) * distance * 2;
+    var geometry = new THREE.PlaneBufferGeometry( height * 16.0 / 9.0, height);
     var material = new THREE.MeshBasicMaterial( { map: texture } );
+    
+    var mesh = new THREE.Mesh( geometry, material );
+    mesh.position.set(0, 0, -distance);
+    mesh.lookAt(0,0,0);    
+    group.add( mesh );
+}
 
-    var count = 52;
-    var radius = 32;
+function init() {
+    
+    scene = new THREE.Scene();
 
-    for ( var i = 1, l = count; i <= l; i ++ ) {
+    device.add(camera);
+    addVideoBackground(device);
 
-        var phi = Math.acos( - 1 + ( 2 * i ) / l );
-        var theta = Math.sqrt( l * Math.PI ) * phi;
-
-        var mesh = new THREE.Mesh( geometry, material );
-        mesh.position.setFromSphericalCoords( radius, phi, theta );
-        mesh.lookAt( camera.position );
-        scene.add( mesh );
-
-    }
+    scene.add(device);
 
     renderer = new THREE.WebGLRenderer( { antialias: true } );
     renderer.setPixelRatio( window.devicePixelRatio );
     renderer.setSize( window.innerWidth, window.innerHeight );
     document.body.appendChild( renderer.domElement );
 
-    var controls = new OrbitControls( camera, renderer.domElement );
-    controls.enableZoom = false;
-    controls.enablePan = false;
+    // var controls = new OrbitControls( camera, renderer.domElement );
+    // controls.enableZoom = false;
+    // controls.enablePan = false;
 
-    window.addEventListener( 'resize', onWindowResize, false );
+    window.addEventListener('resize', onWindowResize, false );
 
-    //
+    startVideoStream();
 
-    if ( navigator.mediaDevices && navigator.mediaDevices.getUserMedia ) {
+}
 
+function startVideoStream()
+{
+    if ( navigator.mediaDevices && navigator.mediaDevices.getUserMedia )
+    {
         var constraints = { video: { width: 1280, height: 720, facingMode: 'user' } };
 
         navigator.mediaDevices.getUserMedia( constraints ).then( function ( stream ) {
@@ -61,18 +72,9 @@ function init() {
             video.srcObject = stream;
             video.play();
 
-        } ).catch( function ( error ) {
+        } ).catch( function ( error ) { console.error( 'Unable to access the camera/webcam.', error );   } );
 
-            console.error( 'Unable to access the camera/webcam.', error );
-
-        } );
-
-    } else {
-
-        console.error( 'MediaDevices interface not available.' );
-
-    }
-
+    } else { console.error( 'MediaDevices interface not available.' ); }
 }
 
 function onWindowResize() {
@@ -90,3 +92,4 @@ function animate() {
     renderer.render( scene, camera );
 
 }
+
