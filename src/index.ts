@@ -4,8 +4,11 @@ import { Vector3, Quaternion, Mesh, Euler, MathUtils } from 'three';
 import { DeviceOrientationControls } from 'three/examples/jsm/controls/DeviceOrientationControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
-var camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
-var tablet = new THREE.Group();
+var render_cam = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
+var camera_rfu = new THREE.Group();
+
+var tablet_from_camera = new Quaternion();
+tablet_from_camera.setFromAxisAngle(new Vector3(1,0,0), -Math.PI * 0.5);
 
 var scene, renderer, labelRenderer, video, rawOrientation, earthDiv, videoPlane;
 
@@ -18,6 +21,7 @@ var DeviceOrientationRaw = function (  ) {
 	this.deviceOrientation = {};
 	this.screenOrientation = 0;
 	this.alphaOffset = 0; // radians
+    this.world_from_tablet = new Quaternion();
 
 	var onDeviceOrientationChangeEvent = function ( event ) {
 
@@ -38,11 +42,20 @@ var DeviceOrientationRaw = function (  ) {
             heightToWidth = 16.0 / 9.0;
         }
 
-        var distance = (camera.far - 0.01);
-        var height = Math.tan(0.5 * camera.fov * Math.PI / 180) * distance * 2;
+        var distance = (render_cam.far - 0.01);
+        var height = Math.tan(0.5 * render_cam.fov * Math.PI / 180) * distance * 2;
         var geometry = new THREE.PlaneBufferGeometry( height * heightToWidth, height);
 
         videoPlane.geometry = geometry;
+
+        // var camera_from_tablet = new Quaternion();
+        // camera_from_tablet.setFromAxisAngle(new Vector3(0, 0, 1), scope.screenOrientation);
+
+        // var up = new Vector3(0,1,0).applyQuaternion(camera_from_tablet);
+        // var down = new Vector3(0,0,-1).applyQuaternion(camera_from_tablet);
+
+        // camera.up.set(up.x, up.y, up.z);
+        // camera.lookAt(down);
 	};
 
 	// The angles alpha, beta and gamma form a set of intrinsic Tait-Bryan angles of type Z-X'-Y''
@@ -127,9 +140,7 @@ var DeviceOrientationRaw = function (  ) {
 			var headingRadians = device.alpha ? MathUtils.degToRad( device.alpha ) + scope.alphaOffset : 0; // Z
 			var pitchRadians = device.beta ? MathUtils.degToRad( device.beta ) : 0; // X'
 			var rollRadians = device.gamma ? MathUtils.degToRad( device.gamma ) : 0; // Y''
-
-			var screenOrientation = scope.screenOrientation ? MathUtils.degToRad( scope.screenOrientation ) : 0; // O
-
+            var screen = scope.screenOrientation ? MathUtils.degToRad(scope.screenOrientation) : 0;
 
             var roll = new Quaternion();
             roll.setFromAxisAngle(new Vector3(0,1,0), rollRadians);
@@ -140,21 +151,28 @@ var DeviceOrientationRaw = function (  ) {
             var heading = new Quaternion();
             heading.setFromAxisAngle(new Vector3(0,0,1), headingRadians);
 
+            var screenCorrection = new Quaternion();
+            screenCorrection.setFromAxisAngle(new Vector3(0,0,1), -screen);
+
             // This rotation is not affected by the orientation of the device:
-            var world_from_tablet = heading.multiply(pitch).multiply(roll);
+            this.world_from_tablet = heading.multiply(pitch).multiply(roll).multiply(screenCorrection);
+            
+            camera_rfu.setRotationFromQuaternion(this.world_from_tablet.multiply(tablet_from_camera));
 
-            // Physically the camera also doesn't change orientation, however, the incoming
-            // video stream rotates and even changes aspect ratio.
-            // Same for the screen itself.
-            var camera_from_tablet = new Quaternion();
-            camera_from_tablet.setFromAxisAngle(new Vector3(0,0,1), screenOrientation);
-            var tablet_from_camera = camera_from_tablet.inverse();
+            // // Physically the camera also doesn't change orientation, however, the incoming
+            // // video stream rotates and even changes aspect ratio.
+            // // Same for the screen itself.
+            // var camera_from_tablet = new Quaternion();
+            // camera_from_tablet.setFromAxisAngle(new Vector3(0,0,1), screenOrientation);
 
-            var world_from_camera = world_from_tablet.multiply(tablet_from_camera);
 
-            var forward = new Vector3(0,1,0).applyQuaternion(world_from_camera);
+            // var tablet_from_camera = camera_from_tablet.inverse();
 
-            earthDiv.textContent = forward.x + ", " + forward.y + ", "+ forward.z;
+            // var world_from_camera = world_from_tablet.multiply(tablet_from_camera);
+
+            // var forward = new Vector3(0,1,0).applyQuaternion(world_from_camera);
+
+            // earthDiv.textContent = forward.x + ", " + forward.y + ", "+ forward.z;
 
             
 
@@ -190,8 +208,8 @@ function setupDevice()
     video = document.getElementById( 'video' );
   
     var texture = new THREE.VideoTexture( video );
-    var distance = (camera.far - 0.01) ;
-    var height = Math.tan(0.5 * camera.fov * Math.PI / 180) * distance * 2;
+    var distance = (render_cam.far - 0.01) ;
+    var height = Math.tan(0.5 * render_cam.fov * Math.PI / 180) * distance * 2;
 
     var geometry = new THREE.PlaneBufferGeometry( height * 16.0 / 9.0, height);
     var material = new THREE.MeshBasicMaterial( { map: texture } );
@@ -201,8 +219,8 @@ function setupDevice()
     mesh.quaternion.setFromAxisAngle(new Vector3(1,0,0), 0.5 * Math.PI); 
     videoPlane = mesh;
 
-    camera.up.set(0,0,1);
-    camera.lookAt(0,1,0);
+    render_cam.up.set(0,0,1);
+    render_cam.lookAt(0,1,0);
 
     earthDiv = document.createElement("div");    
     earthDiv.className = 'label';
@@ -211,9 +229,9 @@ function setupDevice()
     var earthLabel = new CSS2DObject( earthDiv );
     earthLabel.position.set( 0, distance - 0.01, 0 );
 
-    tablet.add(earthLabel);
-    tablet.add(camera);
-    tablet.add(videoPlane);
+    camera_rfu.add(earthLabel);
+    camera_rfu.add(render_cam);
+    camera_rfu.add(videoPlane);
 }
 
 function init() {
@@ -223,11 +241,23 @@ function init() {
     setupDevice();
 
 
-    scene.add(tablet);
+    scene.add(camera_rfu);
 
 
     rawOrientation = new DeviceOrientationRaw();
     rawOrientation.connect();
+
+    var axisHelper =new THREE.AxesHelper( 5 );
+    axisHelper.position.set(0,5,-1);
+    var gridHelper = new THREE.GridHelper(20,50);
+    gridHelper.quaternion.setFromAxisAngle(new Vector3(1,0,0), 0.5 * Math.PI);
+    gridHelper.position.set(0,5, -1);
+
+
+    scene.add( axisHelper);
+    scene.add( gridHelper);
+
+
 
 
     renderer = new THREE.WebGLRenderer( { antialias: true } );
@@ -276,8 +306,8 @@ function startVideoStream()
 
 function onWindowResize() {
 
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
+    render_cam.aspect = window.innerWidth / window.innerHeight;
+    render_cam.updateProjectionMatrix();
 
     renderer.setSize( window.innerWidth, window.innerHeight );
     labelRenderer.setSize( window.innerWidth, window.innerHeight );
@@ -291,8 +321,9 @@ function animate()
     rawOrientation.update();
 
     requestAnimationFrame( animate );
-    renderer.render( scene, camera );
-    labelRenderer.render( scene, camera );
+
+    renderer.render( scene, render_cam );
+    labelRenderer.render( scene, render_cam );
 
 }
 
