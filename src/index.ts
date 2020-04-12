@@ -1,95 +1,149 @@
 import * as THREE from 'three';
 
-import { Vector3, Quaternion, Mesh, Euler, MathUtils } from 'three';
-import { DeviceOrientationControls } from 'three/examples/jsm/controls/DeviceOrientationControls.js';
+import { Vector3, Quaternion, Mesh, Euler, MathUtils, Object3D, Group, PerspectiveCamera, VideoTexture } from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
-var render_cam = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 );
-var camera_rfu = new THREE.Group();
+var camera : ARCamera;
+var imu : ImuPose;
 
-var tablet_from_camera = new Quaternion();
-tablet_from_camera.setFromAxisAngle(new Vector3(1,0,0), -Math.PI * 0.5);
+var scene, renderer, labelRenderer, video;
 
-var scene, renderer, labelRenderer, video, rawOrientation, earthDiv, videoPlane;
+class Pose
+{
+    rotation: Quaternion;
+    translation: Vector3;
 
-var DeviceOrientationRaw = function (  ) {
+    constructor(rotation: Quaternion, translation: Vector3) {
+        this.rotation = rotation;
+        this.translation = translation;
+    }
+    
+    public transform(point : Vector3)
+    {
+        point.applyQuaternion(this.rotation).add(this.translation);
+    }
 
-	var scope = this;
+    public multiply(lefthandSide : Pose) : Pose
+    {
+        return this.multiplyPoses(this, lefthandSide);
+    }
 
-	this.enabled = true;
+    public multiplyPoses(a_from_b : Pose, b_from_c : Pose) : Pose
+    {
+        this.rotation.multiplyQuaternions(a_from_b.rotation, b_from_c.rotation);
+        this.translation.copy(b_from_c.translation).applyQuaternion(a_from_b.rotation).add(a_from_b.translation);
+        return this;
+    }
+}
 
-	this.deviceOrientation = {};
-	this.screenOrientation = 0;
-	this.alphaOffset = 0; // radians
-    this.world_from_tablet = new Quaternion();
+class ARCamera extends Group
+{
+    tablet_from_camera: Pose;
+    world_from_camera: Pose;
+    
+    imu_from_tablet : Pose = new Pose( new Quaternion(), new Vector3(0,0,0));
+    world_from_imu : Pose = new Pose( new Quaternion(), new Vector3(0,0,0));
 
-	var onDeviceOrientationChangeEvent = function ( event ) {
+    render_cam : PerspectiveCamera;
+    videoPlane : Mesh;
 
-        scope.deviceOrientation = event;
+    constructor (tablet_from_camera : Pose, render_cam : PerspectiveCamera, video : VideoTexture)
+    {
+        super()
 
-	};
+        this.render_cam = render_cam;
+        this.tablet_from_camera = tablet_from_camera;
 
-	var onScreenOrientationChangeEvent = function () {
+        // Set up image plane, behind anything else:
+        var distance = (render_cam.far - 0.001) ;
+        var height = Math.tan(0.5 * render_cam.fov * Math.PI / 180) * distance * 2;
+    
+        var geometry = new THREE.PlaneBufferGeometry( height * 16.0 / 9.0, height);
+        var material = new THREE.MeshBasicMaterial( { map: video } );
+        
+        var mesh = new THREE.Mesh( geometry, material );
+        mesh.position.set(0, distance, 0);
+        mesh.quaternion.setFromAxisAngle(new Vector3(1,0,0), 0.5 * Math.PI); 
+        this.videoPlane = mesh;
+        this.add(mesh);
 
-        scope.screenOrientation = window.orientation || 0;
+        render_cam.up.set(0,0,1);
+        render_cam.lookAt(0,1,0);
+        this.add(render_cam);
+
+        this.world_from_camera = new Pose(this.quaternion, this.position);
+    
+        this.onScreenOrientationChangeEvent();
+    }
+    
+    update()
+    {
+        this.world_from_camera.multiplyPoses(this.world_from_imu, this.imu_from_tablet).multiply(this.tablet_from_camera);
+    }
+
+    public onScreenOrientationChangeEvent() 
+    {
+        var orientation : any = window.orientation || 0;
+        var screen = MathUtils.degToRad(orientation);
         
         // default, 0, is portrait mode
         var heightToWidth = 9.0 / 16.0;
 
         // else, landscape mode
-        if (Math.abs(scope.screenOrientation) > 0)
+        if (Math.abs(screen) > 0)
         {
             heightToWidth = 16.0 / 9.0;
         }
 
-        var distance = (render_cam.far - 0.01);
-        var height = Math.tan(0.5 * render_cam.fov * Math.PI / 180) * distance * 2;
+        var distance = (this.render_cam.far - 0.01);
+        var height = Math.tan(0.5 * this.render_cam.fov * Math.PI / 180) * distance * 2;
         var geometry = new THREE.PlaneBufferGeometry( height * heightToWidth, height);
 
-        videoPlane.geometry = geometry;
+        this.videoPlane.geometry = geometry;
+        this.imu_from_tablet.rotation.setFromAxisAngle(new Vector3(0,0,1), -screen);
+    };
+}
 
-        // var camera_from_tablet = new Quaternion();
-        // camera_from_tablet.setFromAxisAngle(new Vector3(0, 0, 1), scope.screenOrientation);
+class ImuPose
+{
+    world_from_imu: Quaternion;
 
-        // var up = new Vector3(0,1,0).applyQuaternion(camera_from_tablet);
-        // var down = new Vector3(0,0,-1).applyQuaternion(camera_from_tablet);
+    imu_roll : Quaternion = new Quaternion();
+    imu_pitch : Quaternion = new Quaternion();
+    imu_heading : Quaternion = new Quaternion();
 
-        // camera.up.set(up.x, up.y, up.z);
-        // camera.lookAt(down);
-	};
+    constructor(world_from_imu: Quaternion)
+    {
+        this.world_from_imu = world_from_imu;
+    }
 
-	// The angles alpha, beta and gamma form a set of intrinsic Tait-Bryan angles of type Z-X'-Y''
+    public onDeviceOrientationChangeEvent( device ) 
+    {
+        var headingRadians = device.alpha ? MathUtils.degToRad( device.alpha ) : 0;
+        var pitchRadians = device.beta ? MathUtils.degToRad( device.beta ) : 0;
+        var rollRadians = device.gamma ? MathUtils.degToRad( device.gamma ) : 0;
 
-	// var setObjectQuaternion = function () {
+        this.imu_roll.setFromAxisAngle(new Vector3(0,1,0), rollRadians);
+        this.imu_pitch.setFromAxisAngle(new Vector3(1,0,0), pitchRadians);
+        this.imu_heading.setFromAxisAngle(new Vector3(0,0,1), headingRadians);
 
-	// 	var zee = new Vector3( 0, 0, 1 );
+        this.world_from_imu.multiplyQuaternions(this.imu_heading, this.imu_pitch).multiply(this.imu_roll);
+    };
+}
 
-	// 	var euler = new Euler();
+class DeviceConnector
+{
+    imu : ImuPose;
+    camera : ARCamera;
 
-	// 	var q0 = new Quaternion();
+    constructor(imu : ImuPose, camera : ARCamera){
+        this.imu = imu;
+        this.camera = camera;
+    }
 
-	// 	var q1 = new Quaternion( - Math.sqrt( 0.5 ), 0, 0, Math.sqrt( 0.5 ) ); // - PI/2 around the x-axis
-
-	// 	return function ( quaternion, alpha, beta, gamma, orient ) {
-
-	// 		euler.set( beta, alpha, - gamma, 'YXZ' ); // 'ZXY' for the device, but 'YXZ' for us
-
-	// 		quaternion.setFromEuler( euler ); // orient the device
-
-	// 		quaternion.multiply( q1 ); // camera looks out the back of the device, not the top
-
-	// 		quaternion.multiply( q0.setFromAxisAngle( zee, - orient ) ); // adjust for screen orientation
-
-	// 	};
-
-	// }();
-
-	this.connect = function () {
-
-		onScreenOrientationChangeEvent(); // run once on load
-
-        var toFoolTypeScript; 
-        var deviceOrientationEvent = (window.DeviceOrientationEvent !== undefined) ? window.DeviceOrientationEvent : toFoolTypeScript;
+    connect()
+    {
+        var deviceOrientationEvent : any = (window.DeviceOrientationEvent !== undefined) ? window.DeviceOrientationEvent : 0;
 
 		// iOS 13+
 
@@ -99,8 +153,9 @@ var DeviceOrientationRaw = function (  ) {
 
 				if ( response == 'granted' ) {
 
-					window.addEventListener( 'orientationchange', onScreenOrientationChangeEvent, false );
-					window.addEventListener( 'deviceorientation', onDeviceOrientationChangeEvent, false );
+                    console.log("A");
+					window.addEventListener( 'orientationchange', this.camera.onScreenOrientationChangeEvent.bind(this.camera), false );
+					window.addEventListener( 'deviceorientation', this.imu.onDeviceOrientationChangeEvent.bind(this.imu), false );
 
 				}
 
@@ -112,172 +167,59 @@ var DeviceOrientationRaw = function (  ) {
 
 		} else {
 
-			window.addEventListener( 'orientationchange', onScreenOrientationChangeEvent, false );
-			window.addEventListener( 'deviceorientation', onDeviceOrientationChangeEvent, false );
+            console.log("B");
+			window.addEventListener( 'orientationchange',  this.camera.onScreenOrientationChangeEvent.bind(this.camera), false );
+			window.addEventListener( 'deviceorientation', this.imu.onDeviceOrientationChangeEvent.bind(this.imu), false );
 
 		}
 
-		scope.enabled = true;
 	};
 
-	this.disconnect = function () {
-
-		window.removeEventListener( 'orientationchange', onScreenOrientationChangeEvent, false );
-		window.removeEventListener( 'deviceorientation', onDeviceOrientationChangeEvent, false );
-
-		scope.enabled = false;
-
+	disconnect() {
+		window.removeEventListener( 'orientationchange', this.camera.onScreenOrientationChangeEvent.bind(this.camera), false );
+		window.removeEventListener( 'deviceorientation', this.imu.onDeviceOrientationChangeEvent.bind(this.imu), false );
 	};
-
-	this.update = function () {
-
-		if ( scope.enabled === false ) return;
-
-		var device = scope.deviceOrientation;
-
-		if ( device ) {
-
-			var headingRadians = device.alpha ? MathUtils.degToRad( device.alpha ) + scope.alphaOffset : 0; // Z
-			var pitchRadians = device.beta ? MathUtils.degToRad( device.beta ) : 0; // X'
-			var rollRadians = device.gamma ? MathUtils.degToRad( device.gamma ) : 0; // Y''
-            var screen = scope.screenOrientation ? MathUtils.degToRad(scope.screenOrientation) : 0;
-
-            var roll = new Quaternion();
-            roll.setFromAxisAngle(new Vector3(0,1,0), rollRadians);
-
-            var pitch = new Quaternion();
-            pitch.setFromAxisAngle(new Vector3(1,0,0), pitchRadians);
-
-            var heading = new Quaternion();
-            heading.setFromAxisAngle(new Vector3(0,0,1), headingRadians);
-
-            var screenCorrection = new Quaternion();
-            screenCorrection.setFromAxisAngle(new Vector3(0,0,1), -screen);
-
-            // This rotation is not affected by the orientation of the device:
-            this.world_from_tablet = heading.multiply(pitch).multiply(roll).multiply(screenCorrection);
-            
-            camera_rfu.setRotationFromQuaternion(this.world_from_tablet.multiply(tablet_from_camera));
-
-            // // Physically the camera also doesn't change orientation, however, the incoming
-            // // video stream rotates and even changes aspect ratio.
-            // // Same for the screen itself.
-            // var camera_from_tablet = new Quaternion();
-            // camera_from_tablet.setFromAxisAngle(new Vector3(0,0,1), screenOrientation);
-
-
-            // var tablet_from_camera = camera_from_tablet.inverse();
-
-            // var world_from_camera = world_from_tablet.multiply(tablet_from_camera);
-
-            // var forward = new Vector3(0,1,0).applyQuaternion(world_from_camera);
-
-            // earthDiv.textContent = forward.x + ", " + forward.y + ", "+ forward.z;
-
-            
-
-
-            
-			// setObjectQuaternion( scope.object.quaternion, alpha, beta, gamma, orient );
-
-		}
-
-
-	};
-
-	this.dispose = function () {
-
-		scope.disconnect();
-
-	};
-
-	this.connect();
-
-};
-
-
-
-
+}
 
 init();
 animate();
 
 
-function setupDevice()
-{
-    video = document.getElementById( 'video' );
-  
-    var texture = new THREE.VideoTexture( video );
-    var distance = (render_cam.far - 0.01) ;
-    var height = Math.tan(0.5 * render_cam.fov * Math.PI / 180) * distance * 2;
-
-    var geometry = new THREE.PlaneBufferGeometry( height * 16.0 / 9.0, height);
-    var material = new THREE.MeshBasicMaterial( { map: texture } );
-
-    var mesh = new THREE.Mesh( geometry, material );
-    mesh.position.set(0, distance, 0);
-    mesh.quaternion.setFromAxisAngle(new Vector3(1,0,0), 0.5 * Math.PI); 
-    videoPlane = mesh;
-
-    render_cam.up.set(0,0,1);
-    render_cam.lookAt(0,1,0);
-
-    earthDiv = document.createElement("div");    
-    earthDiv.className = 'label';
-    earthDiv.textContent = 'Earth';
-    earthDiv.style.marginTop = '-1em';
-    var earthLabel = new CSS2DObject( earthDiv );
-    earthLabel.position.set( 0, distance - 0.01, 0 );
-
-    camera_rfu.add(earthLabel);
-    camera_rfu.add(render_cam);
-    camera_rfu.add(videoPlane);
-}
-
 function init() {
     
     scene = new THREE.Scene();
 
-    setupDevice();
+    video = document.getElementById( 'video' ); 
+    var texture = new THREE.VideoTexture( video );
 
+    // setupDevice();
+    camera = new ARCamera(new Pose(new Quaternion().setFromAxisAngle(new Vector3(1,0,0), -Math.PI * 0.5), new Vector3(0,0,0)),
+                          new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 ), texture );
 
-    scene.add(camera_rfu);
+    scene.add(camera);
 
-
-    rawOrientation = new DeviceOrientationRaw();
-    rawOrientation.connect();
+    imu = new ImuPose(camera.world_from_imu.rotation);
+    new DeviceConnector(imu, camera).connect();
 
     var axisHelper =new THREE.AxesHelper( 5 );
-    axisHelper.position.set(0,5,-1);
+    axisHelper.position.set(0,0,-1);
     var gridHelper = new THREE.GridHelper(20,50);
     gridHelper.quaternion.setFromAxisAngle(new Vector3(1,0,0), 0.5 * Math.PI);
-    gridHelper.position.set(0,5, -1);
-
+    gridHelper.position.set(0, 0, -1);
 
     scene.add( axisHelper);
     scene.add( gridHelper);
-
-
-
 
     renderer = new THREE.WebGLRenderer( { antialias: true } );
     renderer.setPixelRatio( window.devicePixelRatio );
     renderer.setSize( window.innerWidth, window.innerHeight );
     document.body.appendChild( renderer.domElement );
 
-  
 	labelRenderer = new CSS2DRenderer();
-
     labelRenderer.setSize( window.innerWidth, window.innerHeight );
-
     labelRenderer.domElement.style.position = 'absolute';
-
     labelRenderer.domElement.style.top = 0;
-
     document.body.appendChild( labelRenderer.domElement );
-
-
-
 
     window.addEventListener('resize', onWindowResize, false );
 
@@ -306,24 +248,23 @@ function startVideoStream()
 
 function onWindowResize() {
 
-    render_cam.aspect = window.innerWidth / window.innerHeight;
-    render_cam.updateProjectionMatrix();
+    camera.render_cam.aspect = window.innerWidth / window.innerHeight;
+    camera.render_cam.updateProjectionMatrix();
 
     renderer.setSize( window.innerWidth, window.innerHeight );
     labelRenderer.setSize( window.innerWidth, window.innerHeight );
-
 }
 
 function animate() 
 {
     
 
-    rawOrientation.update();
+    camera.update();
 
     requestAnimationFrame( animate );
 
-    renderer.render( scene, render_cam );
-    labelRenderer.render( scene, render_cam );
+    renderer.render( scene, camera.render_cam );
+    labelRenderer.render( scene, camera.render_cam );
 
 }
 
