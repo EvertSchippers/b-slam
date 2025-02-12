@@ -32,6 +32,12 @@ export class ARCamera extends Group {
         this.world_from_camera.multiplyPoses(this.world_from_imu, this.imu_from_tablet).multiply(this.tablet_from_camera);
     }
     public onScreenOrientationChangeEvent() {
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const fov_ratio = window.innerHeight / Math.max(window.innerWidth, window.innerHeight);
+        const fov = fov_ratio * (parseFloat(urlParams.get('fov')) || 60);
+        this.render_cam.fov = fov;
+
         var orientation: any = window.orientation || 0;
         var screen = MathUtils.degToRad(orientation);
         // default, 0, is portrait mode

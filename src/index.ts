@@ -24,8 +24,14 @@ function init() {
     video = document.getElementById( 'video' ); 
     var texture = new THREE.VideoTexture( video );
 
+    // Get FOV from URL parameter, default to 60 if not specified
+    const urlParams = new URLSearchParams(window.location.search);
+    const fov = parseFloat(urlParams.get('fov')) || 60;
+
+    let fov_ratio = window.innerHeight / Math.max(window.innerWidth, window.innerHeight);
+
     camera = new ARCamera(new Pose(new Quaternion().setFromAxisAngle(new Vector3(1,0,0), -Math.PI * 0.5), new Vector3(0,0,0)),
-                          new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 100 ), texture );
+                          new THREE.PerspectiveCamera(fov * fov_ratio, window.innerWidth / window.innerHeight, 0.1, 100 ), texture );
 
     scene.add(camera);
 
@@ -44,7 +50,7 @@ function init() {
     // Create lines fixed to camera
     const distance = 1; // Distance from camera
     const angleSpacing = 2; // degrees
-    const totalAngleRange = 60; // degrees (30 degrees each side)
+    const totalAngleRange = 6; // degrees
     
     // Create a container for all the lines
     const linesContainer = new THREE.Object3D();
@@ -53,14 +59,14 @@ function init() {
     for (let angle = -totalAngleRange/2; angle <= totalAngleRange/2; angle += angleSpacing) {
         const z = distance * Math.tan(angle * Math.PI / 180);
         const points = [
-            new THREE.Vector3(-1, distance, z),
-            new THREE.Vector3(1, distance, z)
+            new THREE.Vector3(-2, distance, z),
+            new THREE.Vector3(2, distance, z)
         ];
         
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         const material = new THREE.LineBasicMaterial({ 
-            color: 0x00ff00,  // Changed to green
-            linewidth: 1      // Made lines thicker (note: linewidth > 1 might not work in WebGL)
+            color: 0xFF8C00,  // Dark orange color
+            linewidth: 1      // Thin lines
         });
         const line = new THREE.Line(geometry, material);
         linesContainer.add(line);
@@ -76,8 +82,8 @@ function init() {
         
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         const material = new THREE.LineBasicMaterial({ 
-            color: 0x00ff00,  // Changed to green
-            linewidth: 2      // Made lines thicker
+            color: 0xFF8C00,  // Dark orange color
+            linewidth: 1      // Thin lines
         });
         const line = new THREE.Line(geometry, material);
         linesContainer.add(line);
@@ -132,14 +138,9 @@ function onWindowResize() {
 
 function animate() 
 {
-    
-
     camera.update();
-
     requestAnimationFrame( animate );
-
     renderer.render( scene, camera.render_cam );
     labelRenderer.render( scene, camera.render_cam );
-
 }
 

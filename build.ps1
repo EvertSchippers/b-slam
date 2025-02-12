@@ -1,3 +1,3 @@
 rm -r build/*
 tsc --outDir build
-npx webpack -o ..\b-slam-master\dist --entry ./build
+npx webpack -o .\site\dist --entry ./build

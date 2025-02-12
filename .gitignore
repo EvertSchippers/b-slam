@@ -1,4 +1,4 @@
 node_modules
 build/index.js
 dist
-build_output/
+build/
