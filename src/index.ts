@@ -14,6 +14,10 @@ var imu : ImuPose;
 var scene, renderer, labelRenderer, video;
 // var dimensionsLabel: CSS2DObject;
 
+// Add these variables near the top with other global variables
+var initialPinchDistance: number | null = null;
+var initialFov: number;
+
 init();
 animate();
 
@@ -40,15 +44,15 @@ function init() {
     imu = new ImuPose(camera.world_from_imu.rotation);
     new DeviceConnector(imu, camera).connect();
 
-    var axisHelper =new THREE.AxesHelper( 5 );
-    axisHelper.position.set(0,0,-1);
+    // var axisHelper =new THREE.AxesHelper( 5 );
+    // axisHelper.position.set(0,0,-1);
+    // scene.add( axisHelper);
 
     // var gridHelper = new THREE.GridHelper(20,50);
     // gridHelper.quaternion.setFromAxisAngle(new Vector3(1,0,0), 0.5 * Math.PI);
     // gridHelper.position.set(0, 0, -1);
     // scene.add( gridHelper);
 
-    scene.add( axisHelper);
 
     // Create lines fixed to camera
     const distance = 1; // Distance from camera
@@ -122,6 +126,11 @@ function init() {
 
     startVideoStream();
 
+    // Add touch event listeners after creating renderer
+    labelRenderer.domElement.addEventListener('touchstart', handleTouchStart, false);
+    labelRenderer.domElement.addEventListener('touchmove', handleTouchMove, false);
+    labelRenderer.domElement.addEventListener('touchend', handleTouchEnd, false);
+
 }
 
 function startVideoStream()
@@ -154,5 +163,39 @@ function animate()
     requestAnimationFrame( animate );
     renderer.render( scene, camera.render_cam );
     labelRenderer.render( scene, camera.render_cam );
+}
+
+// Add these new functions before the animate() function
+function getDistanceBetweenTouches(event: TouchEvent): number {
+    const touch1 = event.touches[0];
+    const touch2 = event.touches[1];
+    return Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+    );
+}
+
+function handleTouchStart(event: TouchEvent) {
+    if (event.touches.length === 2) {
+        initialPinchDistance = getDistanceBetweenTouches(event);
+        initialFov = camera.render_cam.fov;
+    }
+}
+
+function handleTouchMove(event: TouchEvent) {
+    if (event.touches.length === 2 && initialPinchDistance !== null) {
+        const currentDistance = getDistanceBetweenTouches(event);
+        const distanceRatio = initialPinchDistance / currentDistance;
+        
+        // Adjust FOV based on pinch gesture
+        // Clamp FOV between 5 and 90 degrees
+        const newFov = Math.min(Math.max(initialFov * distanceRatio, 5), 90);
+        camera.render_cam.fov = newFov;
+        camera.render_cam.updateProjectionMatrix();
+    }
+}
+
+function handleTouchEnd(event: TouchEvent) {
+    initialPinchDistance = null;
 }
 
