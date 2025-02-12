@@ -33,11 +33,6 @@ export class ARCamera extends Group {
     }
     public onScreenOrientationChangeEvent() {
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const fov_ratio = window.innerHeight / Math.max(window.innerWidth, window.innerHeight);
-        const fov = fov_ratio * (parseFloat(urlParams.get('fov')) || 60);
-        this.render_cam.fov = fov;
-
         var orientation: any = window.orientation || 0;
         var screen = MathUtils.degToRad(orientation);
         // default, 0, is portrait mode
@@ -46,11 +41,33 @@ export class ARCamera extends Group {
         if (Math.abs(screen) > 0) {
             heightToWidth = 16.0 / 9.0;
         }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        let webCamVFOV = (parseFloat(urlParams.get('fov')) || 60);
+
+        if (heightToWidth > 1) {
+            webCamVFOV = webCamVFOV / heightToWidth;
+        }
+
+        const webCamHFOV = webCamVFOV * heightToWidth;
+
+        let wantedFOV = (parseFloat(urlParams.get('zoomto')) || Math.min(webCamVFOV, webCamHFOV));
+
+        let renderVFOV = webCamVFOV;
+        let renderHFOV = renderVFOV * (window.innerWidth / window.innerHeight);
+
+        let fovScale = Math.max(wantedFOV / renderVFOV, wantedFOV / renderHFOV);
+
+        this.render_cam.fov = fovScale * renderVFOV;
+        this.render_cam.aspect = window.innerWidth / window.innerHeight;
+
         var distance = (this.render_cam.far - 0.01);
-        var height = Math.tan(0.5 * this.render_cam.fov * Math.PI / 180) * distance * 2;
+        var height = Math.tan(0.5 * webCamVFOV * Math.PI / 180) * distance * 2;
         var geometry = new THREE.PlaneBufferGeometry(height * heightToWidth, height);
         this.videoPlane.geometry = geometry;
         this.imu_from_tablet.rotation.setFromAxisAngle(new Vector3(0, 0, 1), -screen);
+
+        this.render_cam.updateProjectionMatrix();
     }
     ;
 }

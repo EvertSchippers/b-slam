@@ -12,6 +12,7 @@ var camera : ARCamera;
 var imu : ImuPose;
 
 var scene, renderer, labelRenderer, video;
+// var dimensionsLabel: CSS2DObject;
 
 init();
 animate();
@@ -21,7 +22,8 @@ function init() {
     
     scene = new THREE.Scene();
 
-    video = document.getElementById( 'video' ); 
+    video = document.getElementById( 'video' );
+
     var texture = new THREE.VideoTexture( video );
 
     // Get FOV from URL parameter, default to 60 if not specified
@@ -40,12 +42,13 @@ function init() {
 
     var axisHelper =new THREE.AxesHelper( 5 );
     axisHelper.position.set(0,0,-1);
-    var gridHelper = new THREE.GridHelper(20,50);
-    gridHelper.quaternion.setFromAxisAngle(new Vector3(1,0,0), 0.5 * Math.PI);
-    gridHelper.position.set(0, 0, -1);
+
+    // var gridHelper = new THREE.GridHelper(20,50);
+    // gridHelper.quaternion.setFromAxisAngle(new Vector3(1,0,0), 0.5 * Math.PI);
+    // gridHelper.position.set(0, 0, -1);
+    // scene.add( gridHelper);
 
     scene.add( axisHelper);
-    scene.add( gridHelper);
 
     // Create lines fixed to camera
     const distance = 1; // Distance from camera
@@ -91,6 +94,19 @@ function init() {
 
     camera.add(linesContainer);
 
+    // // Create dimensions label
+    // const dimensionsDiv = document.createElement('div');
+    // dimensionsDiv.className = 'label';
+    // dimensionsDiv.style.backgroundColor = 'rgba(0,0,0,0.6)';
+    // dimensionsDiv.style.color = 'white';
+    // dimensionsDiv.style.padding = '2px 6px';
+    // dimensionsDiv.style.borderRadius = '3px';
+    // dimensionsDiv.textContent = `Window: ${window.innerWidth}x${window.innerHeight} Video: ${video.videoWidth}x${video.videoHeight} ${screen.orientation.type}`;
+    
+    // dimensionsLabel = new CSS2DObject(dimensionsDiv);
+    // dimensionsLabel.position.set(0.0, 0.0, -0.5);
+    // scene.add(dimensionsLabel);
+
     renderer = new THREE.WebGLRenderer( { antialias: true } );
     renderer.setPixelRatio( window.devicePixelRatio );
     renderer.setSize( window.innerWidth, window.innerHeight );
@@ -112,16 +128,12 @@ function startVideoStream()
 {
     if ( navigator.mediaDevices && navigator.mediaDevices.getUserMedia )
     {
-        // if enable switch camera, rotate camera pose
         var constraints = { video: { width: 1280, height: 720, facingMode: 'environment' } };
 
         navigator.mediaDevices.getUserMedia( constraints ).then( function ( stream ) {
-
-            // apply the stream to the video element used in the texture
-
             video.srcObject = stream;
             video.play();
-
+            
         } ).catch( function ( error ) { console.error( 'Unable to access the camera/webcam.', error );   } );
 
     } else { console.error( 'MediaDevices interface not available.' ); }
@@ -129,11 +141,11 @@ function startVideoStream()
 
 function onWindowResize() {
 
-    camera.render_cam.aspect = window.innerWidth / window.innerHeight;
-    camera.render_cam.updateProjectionMatrix();
-
     renderer.setSize( window.innerWidth, window.innerHeight );
     labelRenderer.setSize( window.innerWidth, window.innerHeight );
+
+    camera.onScreenOrientationChangeEvent();
+    
 }
 
 function animate() 
