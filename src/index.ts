@@ -41,6 +41,50 @@ function init() {
     scene.add( axisHelper);
     scene.add( gridHelper);
 
+    // Create lines fixed to camera
+    const distance = 1; // Distance from camera
+    const angleSpacing = 2; // degrees
+    const totalAngleRange = 60; // degrees (30 degrees each side)
+    
+    // Create a container for all the lines
+    const linesContainer = new THREE.Object3D();
+    
+    // Create horizontal lines
+    for (let angle = -totalAngleRange/2; angle <= totalAngleRange/2; angle += angleSpacing) {
+        const z = distance * Math.tan(angle * Math.PI / 180);
+        const points = [
+            new THREE.Vector3(-1, distance, z),
+            new THREE.Vector3(1, distance, z)
+        ];
+        
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({ 
+            color: 0x00ff00,  // Changed to green
+            linewidth: 1      // Made lines thicker (note: linewidth > 1 might not work in WebGL)
+        });
+        const line = new THREE.Line(geometry, material);
+        linesContainer.add(line);
+    }
+    
+    // Create vertical lines
+    for (let angle = -totalAngleRange/2; angle <= totalAngleRange/2; angle += angleSpacing) {
+        const x = distance * Math.tan(angle * Math.PI / 180);
+        const points = [
+            new THREE.Vector3(x, distance, -2),
+            new THREE.Vector3(x, distance, 2)
+        ];
+        
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({ 
+            color: 0x00ff00,  // Changed to green
+            linewidth: 2      // Made lines thicker
+        });
+        const line = new THREE.Line(geometry, material);
+        linesContainer.add(line);
+    }
+
+    camera.add(linesContainer);
+
     renderer = new THREE.WebGLRenderer( { antialias: true } );
     renderer.setPixelRatio( window.devicePixelRatio );
     renderer.setSize( window.innerWidth, window.innerHeight );
